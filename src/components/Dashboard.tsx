@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useMemo, useState } from "react";
 import {
   Show,
   SignInButton,
@@ -6,8 +7,8 @@ import {
   UserButton,
   useAuth,
 } from "@clerk/nextjs";
-import { useEffect, useMemo, useState } from "react";
 import { TOPICS } from "@/lib/topics";
+import Calendar from "@/components/Calendar";
 
 export type Problem = {
   id: number;
@@ -18,75 +19,46 @@ export type Problem = {
   topic: string;
   youtube: string;
 };
+type Counts = {
+  visitors: number | null;
+  online: number | null;
+  registered: number | null;
+};
+type Tally = { done: number; total: number };
 
 const DIFF: Record<string, string> = {
   Easy: "text-emerald-400",
   Medium: "text-amber-400",
   Hard: "text-rose-400",
 };
-const todayKey = () => new Date().toLocaleDateString("en-CA");
 const STORE = "dsapath-solved";
-
-function Calendar({ solved }: { solved: Record<number, string> }) {
-  const now = new Date();
-  const y = now.getFullYear(),
-    m = now.getMonth();
-  const lead = new Date(y, m, 1).getDay();
-  const days = new Date(y, m + 1, 0).getDate();
-  const counts: Record<string, number> = {};
-  Object.values(solved).forEach((d) => {
-    counts[d] = (counts[d] || 0) + 1;
-  });
-  const cells: (number | null)[] = [
-    ...Array(lead).fill(null),
-    ...Array.from({ length: days }, (_, i) => i + 1),
-  ];
-  const key = (d: number) =>
-    `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-  return (
-    <div>
-      <p className="mb-2 text-sm font-semibold">
-        {now.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
-      </p>
-      <div className="grid grid-cols-7 gap-1 text-center text-xs">
-        {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
-          <span key={i} className="text-slate-500">
-            {d}
-          </span>
-        ))}
-        {cells.map((d, i) => {
-          const c = d ? counts[key(d)] || 0 : 0;
-          const isToday = d === now.getDate();
-          return (
-            <span
-              key={i}
-              title={c ? `${c} solved` : undefined}
-              className={`flex aspect-square items-center justify-center rounded ${c ? "bg-brand font-semibold text-white" : "text-slate-300"} ${isToday ? "ring-1 ring-glow" : ""}`}
-            >
-              {d ?? ""}
-            </span>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+const STRONG_AT = 25; // solved problems in a topic to be called "Strong"
+const GOOD_AT = 10; // ... and "Good"
+const todayKey = () => new Date().toLocaleDateString("en-CA");
+const pct = (d: number, t: number) => `${t ? (d / t) * 100 : 0}%`;
+const level = (n: number): [string, string] =>
+  n >= STRONG_AT
+    ? ["Strong", "text-emerald-400"]
+    : n >= GOOD_AT
+      ? ["Good", "text-amber-400"]
+      : ["Learning", "text-slate-400"];
+const lcUrl = (slug: string) => `https://leetcode.com/problems/${slug}/`;
+const ytUrl = (p: Problem) =>
+  p.youtube ||
+  `https://www.youtube.com/results?search_query=${encodeURIComponent(`leetcode ${p.id} ${p.title}`)}`;
 
 export default function Dashboard({ problems }: { problems: Problem[] }) {
+  const { isSignedIn, isLoaded } = useAuth();
   const [topic, setTopic] = useState("All");
   const [diff, setDiff] = useState("All");
   const [q, setQ] = useState("");
-  const [open, setOpen] = useState(false);
+  const [leftOpen, setLeftOpen] = useState(false);
+  const [rightOpen, setRightOpen] = useState(false);
+  const [tab, setTab] = useState<"calendar" | "skills">("calendar");
   const [solved, setSolved] = useState<Record<number, string>>({});
+  const [counts, setCounts] = useState<Counts | null>(null);
 
-  const { isSignedIn, isLoaded } = useAuth();
-  const [stats, setStats] = useState<{
-    visitors: number;
-    online: number;
-    registered: number;
-  } | null>(null);
-
-  // Load ticks: from Supabase when signed in, from this browser when signed out
+  // Ticks: from Supabase when signed in, from this browser when signed out
   useEffect(() => {
     if (!isLoaded) return;
     if (isSignedIn) {
@@ -103,7 +75,7 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
     }
   }, [isLoaded, isSignedIn]);
 
-  // Visitor, online and registered counts (D: the browser side)
+  // Visitors, online and registered counts
   useEffect(() => {
     let id = localStorage.getItem("dsapath-vid");
     if (!id) {
@@ -114,7 +86,7 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
       fetch("/api/ping", { method: "POST", body: JSON.stringify({ id }) })
         .then((r) => r.json())
         .then((d) => {
-          if (!d.error) setStats(d);
+          if (!d.error) setCounts(d);
         })
         .catch(() => {});
     ping();
@@ -131,12 +103,10 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
     if (nowSolved) next[id] = day;
     else delete next[id];
     setSolved(next);
-
     if (!isSignedIn) {
       localStorage.setItem(STORE, JSON.stringify(next));
       return;
     }
-
     fetch("/api/progress", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -155,8 +125,13 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
       );
   };
 
+  const byId = useMemo(
+    () => new Map(problems.map((p) => [p.id, p] as const)),
+    [problems],
+  );
+
   const topicStats = useMemo(() => {
-    const t: Record<string, { done: number; total: number }> = {};
+    const t: Record<string, Tally> = {};
     problems.forEach((p) => {
       t[p.topic] ??= { done: 0, total: 0 };
       t[p.topic].total++;
@@ -164,6 +139,39 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
     });
     return t;
   }, [problems, solved]);
+
+  const diffStats = useMemo(() => {
+    const t: Record<string, Tally> = {
+      Easy: { done: 0, total: 0 },
+      Medium: { done: 0, total: 0 },
+      Hard: { done: 0, total: 0 },
+    };
+    problems.forEach((p) => {
+      t[p.difficulty].total++;
+      if (solved[p.id]) t[p.difficulty].done++;
+    });
+    return t;
+  }, [problems, solved]);
+
+  const skills = useMemo(
+    () =>
+      Object.entries(topicStats)
+        .filter(([, s]) => s.done > 0)
+        .sort((a, b) => b[1].done - a[1].done)
+        .slice(0, 6),
+    [topicStats],
+  );
+
+  const today = todayKey();
+  const todayList = useMemo(
+    () => problems.filter((p) => solved[p.id] === today),
+    [problems, solved, today],
+  );
+  const totalDone = Object.keys(solved).length;
+  const current: Tally =
+    topic === "All"
+      ? { done: totalDone, total: problems.length }
+      : (topicStats[topic] ?? { done: 0, total: 0 });
 
   const list = useMemo(() => {
     const s = q.trim().toLowerCase().replace(/^#/, "");
@@ -183,29 +191,19 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
       : res;
   }, [problems, topic, diff, q]);
 
-  const doneToday = Object.values(solved).filter(
-    (d) => d === todayKey(),
-  ).length;
-  const current = topicStats[topic] ?? {
-    done: Object.keys(solved).length,
-    total: problems.length,
+  const closeAll = () => {
+    setLeftOpen(false);
+    setRightOpen(false);
   };
   const pick = (t: string) => {
     setTopic(t);
-    setOpen(false);
+    setLeftOpen(false);
   };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="z-30 shrink-0 border-b border-line bg-ink/95 backdrop-blur">
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-3 px-4 py-3">
-          <button
-            className="rounded border border-line px-3 py-2 text-sm lg:hidden"
-            onClick={() => setOpen(true)}
-            aria-label="Open topics"
-          >
-            Topics
-          </button>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/logo-square.png"
@@ -241,22 +239,30 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
       </header>
 
       <main className="mx-auto grid min-h-0 w-full max-w-[1500px] flex-1 content-start gap-4 overflow-y-auto px-4 py-4 lg:grid-cols-[260px_minmax(0,1fr)_300px] lg:overflow-hidden">
-        {open && (
+        {(leftOpen || rightOpen) && (
           <div
             className="fixed inset-0 z-40 bg-black/60 lg:hidden"
-            onClick={() => setOpen(false)}
+            onClick={closeAll}
           />
         )}
+
+        {/* LEFT: topics (a slide-in panel on phones) */}
         <aside
-          className={`fixed inset-y-0 left-0 z-50 w-72 overflow-y-auto border-r border-line bg-ink p-3 transition-transform lg:static lg:z-auto lg:h-full lg:w-auto lg:overflow-y-auto lg:translate-x-0 lg:rounded lg:border lg:bg-panel ${open ? "translate-x-0" : "-translate-x-full"}`}
+          className={`fixed inset-y-0 left-0 z-50 w-72 overflow-y-auto border-r border-line bg-ink p-3 transition-[transform,visibility] duration-200 lg:static lg:z-auto lg:h-full lg:w-auto lg:translate-x-0 lg:rounded lg:border lg:bg-panel ${leftOpen ? "translate-x-0" : "-translate-x-full max-lg:invisible"}`}
         >
-          <p className="mb-2 px-2 text-sm font-semibold text-slate-400">
-            Topics
-          </p>
+          <div className="mb-2 flex items-center justify-between px-2">
+            <p className="text-sm font-semibold text-slate-400">Topics</p>
+            <button
+              className="rounded border border-line px-2 py-1 text-xs lg:hidden"
+              onClick={() => setLeftOpen(false)}
+            >
+              Close
+            </button>
+          </div>
           {["All", ...TOPICS].map((t) => {
             const s =
               t === "All"
-                ? { done: Object.keys(solved).length, total: problems.length }
+                ? { done: totalDone, total: problems.length }
                 : topicStats[t];
             return (
               <button
@@ -273,14 +279,30 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
           })}
         </aside>
 
+        {/* MIDDLE: problems */}
         <section className="flex min-h-0 min-w-0 flex-col">
+          <div className="mb-3 flex shrink-0 gap-2 lg:hidden">
+            <button
+              onClick={() => setLeftOpen(true)}
+              className="min-w-0 flex-1 truncate rounded border border-line bg-panel px-3 py-2 text-left text-sm"
+            >
+              ☰ {topic === "All" ? "Topics" : topic}
+            </button>
+            <button
+              onClick={() => setRightOpen(true)}
+              className="flex-1 rounded border border-line bg-panel px-3 py-2 text-sm"
+            >
+              📅 Progress
+            </button>
+          </div>
+
           <div className="mb-3 grid shrink-0 grid-cols-3 gap-2 text-center text-xs sm:text-sm">
             {(
               [
-                ["Visitors", stats?.visitors],
-                ["Registered", stats?.registered],
-                ["Online now", stats?.online],
-              ] as [string, number | undefined][]
+                ["Visitors", counts?.visitors],
+                ["Registered", counts?.registered],
+                ["Online now", counts?.online],
+              ] as [string, number | null | undefined][]
             ).map(([label, value]) => (
               <div
                 key={label}
@@ -291,6 +313,7 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
               </div>
             ))}
           </div>
+
           <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2">
             <h1 className="mr-auto text-lg font-bold">
               {q.trim()
@@ -309,6 +332,7 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
               </button>
             ))}
           </div>
+
           <ul className="overflow-hidden rounded border border-line bg-panel lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
             {list.length === 0 && (
               <li className="p-4 text-sm text-slate-400">
@@ -331,7 +355,7 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
                   {p.id}
                 </span>
                 <a
-                  href={`https://leetcode.com/problems/${p.slug}/`}
+                  href={lcUrl(p.slug)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="min-w-0 flex-1 truncate text-sm hover:text-glow"
@@ -343,10 +367,7 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
                   {p.difficulty}
                 </span>
                 <a
-                  href={
-                    p.youtube ||
-                    `https://www.youtube.com/results?search_query=${encodeURIComponent(`leetcode ${p.id} ${p.title}`)}`
-                  }
+                  href={ytUrl(p)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-sm text-glow"
@@ -360,14 +381,43 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
           </ul>
         </section>
 
-        <aside className="space-y-4 lg:h-full lg:overflow-y-auto">
-          <div className="rounded border border-line bg-panel p-4">
-            <Calendar solved={solved} />
+        {/* RIGHT: progress (a slide-in panel on phones) */}
+        <aside
+          className={`fixed inset-y-0 right-0 z-50 w-80 max-w-[90vw] space-y-4 overflow-y-auto border-l border-line bg-ink p-3 transition-[transform,visibility] duration-200 lg:static lg:z-auto lg:h-full lg:w-auto lg:max-w-none lg:translate-x-0 lg:border-0 lg:bg-transparent lg:p-0 ${rightOpen ? "translate-x-0" : "translate-x-full max-lg:invisible"}`}
+        >
+          <div className="flex items-center justify-between lg:hidden">
+            <p className="text-sm font-semibold text-slate-400">Progress</p>
+            <button
+              className="rounded border border-line px-2 py-1 text-xs"
+              onClick={() => setRightOpen(false)}
+            >
+              Close
+            </button>
           </div>
+
           <div className="rounded border border-line bg-panel p-4">
-            <p className="text-sm text-slate-400">Solved today</p>
-            <p className="text-3xl font-bold">{doneToday}</p>
+            <div className="flex items-baseline justify-between">
+              <p className="text-sm text-slate-400">Solved today</p>
+              <p className="text-3xl font-bold">{todayList.length}</p>
+            </div>
+            {todayList.length > 0 && (
+              <ul className="mt-2 max-h-28 space-y-1 overflow-y-auto text-sm">
+                {todayList.map((p) => (
+                  <li key={p.id}>
+                    <a
+                      href={lcUrl(p.slug)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:text-glow"
+                    >
+                      {p.id}. {p.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
+
           <div className="rounded border border-line bg-panel p-4">
             <p className="text-sm text-slate-400">
               {topic === "All" ? "Overall progress" : topic}
@@ -378,11 +428,84 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
             <div className="h-2 rounded bg-line">
               <div
                 className="h-2 rounded bg-glow"
-                style={{
-                  width: `${current.total ? (current.done / current.total) * 100 : 0}%`,
-                }}
+                style={{ width: pct(current.done, current.total) }}
               />
             </div>
+          </div>
+
+          <div className="rounded border border-line bg-panel p-4">
+            <div className="mb-3 flex gap-1 rounded bg-ink p-1 text-sm">
+              {(["calendar", "skills"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={`flex-1 rounded px-2 py-1 capitalize ${tab === t ? "bg-line font-semibold" : "text-slate-400"}`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+
+            {tab === "calendar" ? (
+              <Calendar solved={solved} byId={byId} />
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <p className="mb-2 text-sm font-semibold">Difficulty</p>
+                  {(["Easy", "Medium", "Hard"] as const).map((d) => (
+                    <div key={d} className="mb-2">
+                      <div className="flex justify-between text-xs">
+                        <span className={DIFF[d]}>{d}</span>
+                        <span className="text-slate-400">
+                          {diffStats[d].done}/{diffStats[d].total}
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded bg-line">
+                        <div
+                          className="h-1.5 rounded bg-glow"
+                          style={{
+                            width: pct(diffStats[d].done, diffStats[d].total),
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <p className="mb-2 text-sm font-semibold">Strongest topics</p>
+                  {skills.length === 0 && (
+                    <p className="text-sm text-slate-400">
+                      Solve a few problems and your strongest topics will appear
+                      here.
+                    </p>
+                  )}
+                  {skills.map(([name, s]) => {
+                    const [label, color] = level(s.done);
+                    return (
+                      <div key={name} className="mb-3">
+                        <div className="flex items-baseline justify-between gap-2 text-sm">
+                          <span className="min-w-0 truncate">{name}</span>
+                          <span
+                            className={`shrink-0 text-xs font-semibold ${color}`}
+                          >
+                            {label}
+                          </span>
+                        </div>
+                        <div className="h-1.5 rounded bg-line">
+                          <div
+                            className="h-1.5 rounded bg-brand"
+                            style={{ width: pct(s.done, s.total) }}
+                          />
+                        </div>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {s.done} of {s.total} solved
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </aside>
       </main>
