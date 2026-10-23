@@ -25,20 +25,47 @@ const PAGES: Record<string, { title: string; body: string[] }> = {
 
 export function generateStaticParams() { return Object.keys(PAGES).map((page) => ({ page })); }
 
-export default function Page({ params }: { params: { page: string } }) {
-  const p = PAGES[params.page];
+export default async function Page({ params }: { params:Promise< { page: string } > }) {
+  const { page } = await params;
+  const p = PAGES[page];
   if (!p) notFound();
   return (
     <main className="mx-auto max-w-2xl px-4 py-10">
-      <Link href="/" className="text-sm text-slate-400 hover:text-white">Back to DSA Path</Link>
+      <Link href="/" className="text-sm text-slate-400 hover:text-white">
+        Back to DSA Path
+      </Link>
       <h1 className="mb-4 mt-3 text-2xl font-bold">{p.title}</h1>
       <div className="space-y-3 text-slate-300">
-        {p.body.map((t, i) => <p key={i}>{t}</p>)}
-        {params.page === "contact" && (
+        {p.body.map((t, i) => (
+          <p key={i}>{t}</p>
+        ))}
+        {page === "contact" && (
           <ul className="space-y-2">
-            <li><a className="text-glow" href="https://www.linkedin.com/in/vivek-chaurasiya-4417053a3" target="_blank" rel="noopener noreferrer">LinkedIn</a></li>
-            <li><a className="text-glow" href="https://www.instagram.com/vivek_chaurasiya29/" target="_blank" rel="noopener noreferrer">Instagram</a></li>
-            <li><a className="text-glow" href="mailto:vivekchh123@gmail.com">vivekchh123@gmail.com</a></li>
+            <li>
+              <a
+                className="text-glow"
+                href="https://www.linkedin.com/in/vivek-chaurasiya-4417053a3"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                LinkedIn
+              </a>
+            </li>
+            <li>
+              <a
+                className="text-glow"
+                href="https://www.instagram.com/vivek_chaurasiya29/"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Instagram
+              </a>
+            </li>
+            <li>
+              <a className="text-glow" href="mailto:vivekchh123@gmail.com">
+                vivekchh123@gmail.com
+              </a>
+            </li>
           </ul>
         )}
       </div>

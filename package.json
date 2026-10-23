@@ -9,14 +9,16 @@
     "fetch:problems": "tsx scripts/fetch-problems.ts"
   },
   "dependencies": {
-    "next": "~14.2.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "@clerk/nextjs": "^7.9.19",
+    "@supabase/supabase-js": "^2.118.0",
+    "next": "^15.5.28",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@types/node": "^20",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
