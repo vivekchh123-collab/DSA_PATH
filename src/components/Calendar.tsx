@@ -50,8 +50,9 @@ export default function Calendar({
     { length: days },
     (_, i) => byDate[keyOf(view.y, view.m, i + 1)]?.length ?? 0,
   ).reduce((a, b) => a + b, 0);
+  const LAST_YEAR = now.getFullYear() + 11; // 2037 (today + 11 years)
   const years = Array.from(
-    { length: now.getFullYear() + 2 - 2020 },
+    { length: LAST_YEAR - 2020 + 1 },
     (_, i) => 2020 + i,
   );
 

@@ -57,6 +57,7 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
   const [tab, setTab] = useState<"calendar" | "skills">("calendar");
   const [solved, setSolved] = useState<Record<number, string>>({});
   const [counts, setCounts] = useState<Counts | null>(null);
+  const [barHidden, setBarHidden] = useState(false); // NEW
 
   // Ticks: from Supabase when signed in, from this browser when signed out
   useEffect(() => {
@@ -94,6 +95,21 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
       if (!document.hidden) ping();
     }, 30000);
     return () => clearInterval(t);
+  }, []);
+
+  // NEW: on phones, hide the header while scrolling down and show it again
+  // as soon as you scroll up (it stays visible while you type in the search box)
+  useEffect(() => {
+    let last = window.scrollY;
+    const onScroll = () => {
+      const y = window.scrollY;
+      if (Math.abs(y - last) < 6) return;
+      const typing = document.activeElement instanceof HTMLInputElement;
+      setBarHidden(!typing && y > last && y > 100);
+      last = y;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
   const toggle = (id: number) => {
@@ -201,8 +217,11 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <header className="z-30 shrink-0 border-b border-line bg-ink/95 backdrop-blur">
+    <div className="flex flex-col lg:h-full lg:min-h-0">
+      {/* CHANGED: slides up out of view on phones while scrolling down */}
+      <header
+        className={`sticky top-0 z-30 shrink-0 border-b border-line bg-ink/95 backdrop-blur transition-transform duration-200 ${barHidden ? "max-lg:-translate-y-full" : ""}`}
+      >
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-3 px-4 py-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -218,6 +237,21 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
             aria-label="Search questions"
             className="order-last w-full rounded border border-line bg-panel px-3 py-2 text-sm placeholder:text-slate-500 md:order-none md:w-auto md:flex-1"
           />
+          {/* NEW: Topics and Progress buttons now live in the header (phones only) */}
+          <div className="order-last flex w-full gap-2 lg:hidden">
+            <button
+              onClick={() => setLeftOpen(true)}
+              className="min-w-0 flex-1 truncate rounded border border-line bg-panel px-3 py-2 text-left text-sm"
+            >
+              ☰ {topic === "All" ? "Topics" : topic}
+            </button>
+            <button
+              onClick={() => setRightOpen(true)}
+              className="flex-1 rounded border border-line bg-panel px-3 py-2 text-sm"
+            >
+              📅 Progress
+            </button>
+          </div>
           <div className="ml-auto flex items-center gap-2">
             <Show when="signed-out">
               <SignInButton mode="modal">
@@ -238,7 +272,7 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
         </div>
       </header>
 
-      <main className="mx-auto grid min-h-0 w-full max-w-[1500px] flex-1 content-start gap-4 overflow-y-auto px-4 py-4 lg:grid-cols-[260px_minmax(0,1fr)_300px] lg:overflow-hidden">
+      <main className="mx-auto grid w-full max-w-[1500px] flex-1 content-start gap-4 px-4 py-4 lg:min-h-0 lg:grid-cols-[260px_minmax(0,1fr)_300px] lg:overflow-hidden">
         {(leftOpen || rightOpen) && (
           <div
             className="fixed inset-0 z-40 bg-black/60 lg:hidden"
@@ -280,22 +314,8 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
         </aside>
 
         {/* MIDDLE: problems */}
-        <section className="flex min-h-0 min-w-0 flex-col">
-          <div className="mb-3 flex shrink-0 gap-2 lg:hidden">
-            <button
-              onClick={() => setLeftOpen(true)}
-              className="min-w-0 flex-1 truncate rounded border border-line bg-panel px-3 py-2 text-left text-sm"
-            >
-              ☰ {topic === "All" ? "Topics" : topic}
-            </button>
-            <button
-              onClick={() => setRightOpen(true)}
-              className="flex-1 rounded border border-line bg-panel px-3 py-2 text-sm"
-            >
-              📅 Progress
-            </button>
-          </div>
-
+        <section className="flex min-w-0 flex-col lg:min-h-0">
+          {/* CHANGED: the Topics/Progress buttons moved up into the header */}
           <div className="mb-3 grid shrink-0 grid-cols-3 gap-2 text-center text-xs sm:text-sm">
             {(
               [

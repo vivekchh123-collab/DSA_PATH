@@ -18,8 +18,8 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en">
-        <body className="flex h-dvh flex-col overflow-hidden">
-          <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+        <body className="flex min-h-dvh flex-col lg:h-dvh lg:overflow-hidden">
+          <div className="flex-1 lg:min-h-0 lg:overflow-y-auto">{children}</div>
           <Footer />
         </body>
       </html>
