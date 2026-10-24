@@ -5,8 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "fetch:problems": "tsx scripts/fetch-problems.ts"
+    "start": "next start"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.19",
