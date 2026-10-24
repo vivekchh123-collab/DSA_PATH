@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Problem } from "./Dashboard";
 
 const MONTHS = [
@@ -23,16 +23,27 @@ const keyOf = (y: number, m: number, d: number) =>
 export default function Calendar({
   solved,
   byId,
+  selected,
+  onSelect,
 }: {
   solved: Record<number, string>;
   byId: Map<number, Problem>;
+  selected: string;
+  onSelect: (key: string) => void;
 }) {
   const now = new Date();
   const todayKey = keyOf(now.getFullYear(), now.getMonth(), now.getDate());
-  const [view, setView] = useState({ y: now.getFullYear(), m: now.getMonth() });
-  const [selected, setSelected] = useState(todayKey);
+  const [view, setView] = useState(() => {
+    const [y, m] = selected.split("-").map(Number);
+    return { y, m: m - 1 };
+  });
 
-  // date -> list of problem ids solved that day
+  // when the selected date changes from outside (e.g. "Back to today"), jump to its month
+  useEffect(() => {
+    const [y, m] = selected.split("-").map(Number);
+    setView({ y, m: m - 1 });
+  }, [selected]);
+
   const byDate = useMemo(() => {
     const r: Record<string, number[]> = {};
     for (const [id, d] of Object.entries(solved))
@@ -50,7 +61,7 @@ export default function Calendar({
     { length: days },
     (_, i) => byDate[keyOf(view.y, view.m, i + 1)]?.length ?? 0,
   ).reduce((a, b) => a + b, 0);
-  const LAST_YEAR = now.getFullYear() + 11; // 2037 (today + 11 years)
+  const LAST_YEAR = now.getFullYear() + 11;
   const years = Array.from(
     { length: LAST_YEAR - 2020 + 1 },
     (_, i) => 2020 + i,
@@ -129,7 +140,7 @@ export default function Calendar({
           return (
             <button
               key={i}
-              onClick={() => setSelected(k)}
+              onClick={() => onSelect(k)}
               title={c ? `${c} solved` : undefined}
               className={`flex aspect-square flex-col items-center justify-center rounded text-xs
                 ${c >= 4 ? "bg-brand font-semibold text-white" : c ? "bg-brand/60 font-semibold text-white" : "text-slate-300 hover:bg-line"}
@@ -150,10 +161,7 @@ export default function Calendar({
         </span>
         <button
           className="text-glow hover:underline"
-          onClick={() => {
-            setView({ y: now.getFullYear(), m: now.getMonth() });
-            setSelected(todayKey);
-          }}
+          onClick={() => onSelect(todayKey)}
         >
           Today
         </button>
@@ -163,6 +171,11 @@ export default function Calendar({
         <p className="text-sm font-semibold">{label}</p>
         <p className="text-sm text-slate-400">
           {ids.length} {ids.length === 1 ? "question" : "questions"} solved
+        </p>
+        <p className="mt-1 text-xs text-glow">
+          {selected > todayKey
+            ? "You can’t tick problems on a future date."
+            : "Problems you tick now are counted on this date."}
         </p>
         <ul className="mt-2 max-h-32 space-y-1 overflow-y-auto text-sm">
           {ids.map((id) => {

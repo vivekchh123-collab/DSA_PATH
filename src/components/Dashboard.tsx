@@ -35,6 +35,13 @@ const STORE = "dsapath-solved";
 const STRONG_AT = 25; // solved problems in a topic to be called "Strong"
 const GOOD_AT = 10; // ... and "Good"
 const todayKey = () => new Date().toLocaleDateString("en-CA");
+// NEW: "23 Oct 2026" style label for the date banner
+const formatDay = (k: string) =>
+  new Date(k + "T00:00:00").toLocaleDateString("en-US", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 const pct = (d: number, t: number) => `${t ? (d / t) * 100 : 0}%`;
 const level = (n: number): [string, string] =>
   n >= STRONG_AT
@@ -57,9 +64,12 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
   const [tab, setTab] = useState<"calendar" | "skills">("calendar");
   const [solved, setSolved] = useState<Record<number, string>>({});
   const [counts, setCounts] = useState<Counts | null>(null);
-  const [barHidden, setBarHidden] = useState(false); // NEW
+  const [barHidden, setBarHidden] = useState(false);
+  const [activeDate, setActiveDate] = useState(todayKey()); // NEW: the date new ticks are counted on
+  const [notice, setNotice] = useState(""); // NEW: small message bar
 
-  // Ticks: from Supabase when signed in, from this browser when signed out
+  // CHANGED: ticks are saved only for signed-in users.
+  // Guests can tick during the visit, but nothing is stored and a reload clears it.
   useEffect(() => {
     if (!isLoaded) return;
     if (isSignedIn) {
@@ -68,13 +78,17 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
         .then((d) => setSolved(d.solved ?? {}))
         .catch(() => {});
     } else {
-      try {
-        setSolved(JSON.parse(localStorage.getItem(STORE) || "{}"));
-      } catch {
-        /* ignore */
-      }
+      setSolved({});
+      localStorage.removeItem(STORE); // clear ticks an older version saved in this browser
     }
   }, [isLoaded, isSignedIn]);
+
+  // NEW: hide the notice after a few seconds
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(""), 6000);
+    return () => clearTimeout(t);
+  }, [notice]);
 
   // Visitors, online and registered counts
   useEffect(() => {
@@ -97,7 +111,7 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
     return () => clearInterval(t);
   }, []);
 
-  // NEW: on phones, hide the header while scrolling down and show it again
+  // On phones, hide the header while scrolling down and show it again
   // as soon as you scroll up (it stays visible while you type in the search box)
   useEffect(() => {
     let last = window.scrollY;
@@ -112,15 +126,25 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // CHANGED: ticks count on the date picked in the calendar, and guests are not saved
   const toggle = (id: number) => {
     const nowSolved = !solved[id];
-    const day = todayKey();
+    if (nowSolved && activeDate > todayKey()) {
+      setNotice(
+        "You can’t mark a problem on a future date. Pick today or an earlier date in the calendar.",
+      );
+      return;
+    }
+    const day = activeDate; // the date picked in the calendar
     const next = { ...solved };
     if (nowSolved) next[id] = day;
     else delete next[id];
     setSolved(next);
+
     if (!isSignedIn) {
-      localStorage.setItem(STORE, JSON.stringify(next));
+      setNotice(
+        "Sign in to save your progress. Without an account, ticks disappear when you reload.",
+      );
       return;
     }
     fetch("/api/progress", {
@@ -218,7 +242,7 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
 
   return (
     <div className="flex flex-col lg:h-full lg:min-h-0">
-      {/* CHANGED: slides up out of view on phones while scrolling down */}
+      {/* Slides up out of view on phones while scrolling down */}
       <header
         className={`sticky top-0 z-30 shrink-0 border-b border-line bg-ink/95 backdrop-blur transition-transform duration-200 ${barHidden ? "max-lg:-translate-y-full" : ""}`}
       >
@@ -237,7 +261,7 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
             aria-label="Search questions"
             className="order-last w-full rounded border border-line bg-panel px-3 py-2 text-sm placeholder:text-slate-500 md:order-none md:w-auto md:flex-1"
           />
-          {/* NEW: Topics and Progress buttons now live in the header (phones only) */}
+          {/* Topics and Progress buttons live in the header (phones only) */}
           <div className="order-last flex w-full gap-2 lg:hidden">
             <button
               onClick={() => setLeftOpen(true)}
@@ -315,7 +339,37 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
 
         {/* MIDDLE: problems */}
         <section className="flex min-w-0 flex-col lg:min-h-0">
-          {/* CHANGED: the Topics/Progress buttons moved up into the header */}
+          {/* NEW: message bar (sign-in reminder, future-date warning) */}
+          {notice && (
+            <div
+              role="status"
+              className="mb-3 flex shrink-0 items-start justify-between gap-2 rounded border border-glow/50 bg-glow/10 px-3 py-2 text-sm"
+            >
+              <span>{notice}</span>
+              <button
+                onClick={() => setNotice("")}
+                aria-label="Dismiss"
+                className="text-slate-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+          {/* NEW: shows which date new ticks are counted on */}
+          {activeDate !== today && (
+            <div className="mb-3 flex shrink-0 items-center justify-between gap-2 rounded border border-brand/60 bg-brand/10 px-3 py-2 text-sm">
+              <span>
+                Ticks are counted on <strong>{formatDay(activeDate)}</strong>
+              </span>
+              <button
+                onClick={() => setActiveDate(today)}
+                className="shrink-0 text-glow hover:underline"
+              >
+                Back to today
+              </button>
+            </div>
+          )}
+
           <div className="mb-3 grid shrink-0 grid-cols-3 gap-2 text-center text-xs sm:text-sm">
             {(
               [
@@ -467,7 +521,13 @@ export default function Dashboard({ problems }: { problems: Problem[] }) {
             </div>
 
             {tab === "calendar" ? (
-              <Calendar solved={solved} byId={byId} />
+              /* CHANGED: the calendar now controls the date new ticks count on */
+              <Calendar
+                solved={solved}
+                byId={byId}
+                selected={activeDate}
+                onSelect={setActiveDate}
+              />
             ) : (
               <div className="space-y-4">
                 <div>
