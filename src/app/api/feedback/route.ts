@@ -8,14 +8,14 @@ export async function GET() {
     db.rpc("feedback_summary"),
     db
       .from("feedback")
-      .select("name, rating, comment")
+      .select("name, rating, comment, created_at")
       .eq("hidden", false)
       .order("created_at", { ascending: false })
-      .limit(30),
+      .limit(100),
     userId
       ? db
           .from("feedback")
-          .select("name, rating, comment")
+          .select("name, rating, comment, created_at")
           .eq("user_id", userId)
           .maybeSingle()
       : Promise.resolve({ data: null }),

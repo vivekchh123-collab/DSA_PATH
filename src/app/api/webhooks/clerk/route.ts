@@ -69,7 +69,7 @@ Creator of DSA Path
 </ul>
 <p><strong>One last thing:</strong> I am building DSA Path with learners like you. Click <em>Feedback</em> in the footer, rate your experience from 1 to 5 and tell me what to improve.</p>
 <p><a href="${SITE}" style="display:inline-block;background:#7c6cf6;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold">Open DSA Path</a></p>
-<p>Happy solving,<br>Vivek<br><span style="color:#667">Creator of DSA Path</span></p>
+<p>Happy solving,<br>Er. Vivek Chaurasiya<br><span style="color:#667">Creator of DSA Path</span></p>
 </div>`;
 
   try {

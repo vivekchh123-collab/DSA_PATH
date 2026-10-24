@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { SignInButton, SignUpButton, useAuth, useUser } from "@clerk/nextjs";
 
 export const RATINGS = [
@@ -15,6 +15,7 @@ export type FeedbackItem = {
   name: string;
   rating: number;
   comment: string | null;
+  created_at?: string;
 };
 export type FeedbackData = {
   total: number;
@@ -23,6 +24,13 @@ export type FeedbackData = {
   items: FeedbackItem[];
   mine: FeedbackItem | null;
 };
+
+const formatDate = (iso: string) =>
+  new Date(iso).toLocaleDateString("en-US", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 
 export function useFeedback() {
   const { isSignedIn } = useAuth();
@@ -41,7 +49,7 @@ export function useFeedback() {
   return { data, reload };
 }
 
-// Cycles 0..n-1 every `ms` milliseconds
+// Cycles 0..n-1 every `ms` milliseconds (used by the footer line)
 export function useRotate(n: number, ms = 4000) {
   const [i, setI] = useState(0);
   useEffect(() => {
@@ -70,17 +78,27 @@ export function FeedbackModal({
   const [comment, setComment] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "done">("idle");
   const [error, setError] = useState("");
+  const [sort, setSort] = useState<"top" | "new">("top");
+  const [showForm, setShowForm] = useState(false);
 
-  const items = data?.items ?? [];
-  const idx = useRotate(items.length, 5000);
-  const cur = items[idx];
   const total = data?.total ?? 0;
   const avg = data?.average ?? 0;
 
+  // "top": 5-rating people first, 1-rating last. The server sends newest first,
+  // and the sort keeps that order inside each rating, so each group is new to old.
+  const sorted = useMemo(() => {
+    const list = data?.items ?? [];
+    return sort === "top"
+      ? [...list].sort((a, b) => b.rating - a.rating)
+      : list;
+  }, [data?.items, sort]);
+
+  // every time the window opens, start with the form closed
   useEffect(() => {
     if (open) {
       setStatus("idle");
       setError("");
+      setShowForm(false);
     }
   }, [open]);
 
@@ -149,19 +167,26 @@ export function FeedbackModal({
         aria-modal="true"
         aria-labelledby="fb-title"
         onClick={(e) => e.stopPropagation()}
-        className="fade-up max-h-[92dvh] w-full max-w-lg space-y-5 overflow-y-auto rounded-t-2xl border border-line bg-ink p-5 sm:rounded-2xl"
+        className="max-h-[92dvh] w-full max-w-lg space-y-5 overflow-y-auto rounded-t-2xl border border-line bg-ink p-5 sm:rounded-2xl"
       >
-        <div className="flex items-center justify-between">
-          <h2 id="fb-title" className="text-xl font-bold">
-            Feedback
-          </h2>
-          <button
-            onClick={onClose}
-            aria-label="Close feedback"
-            className="rounded border border-line px-2 py-1 text-sm hover:bg-panel"
-          >
-            ✕
-          </button>
+        {/* title */}
+        <div>
+          <div className="flex items-center justify-between">
+            <h2 id="fb-title" className="text-xl font-bold">
+              Feedback
+            </h2>
+            <button
+              onClick={onClose}
+              aria-label="Close feedback"
+              className="rounded border border-line px-2 py-1 text-sm hover:bg-panel"
+            >
+              ✕
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-slate-400">
+            Hi, I’m Vivek, the creator of DSA Path. Your honest feedback decides
+            what I build next. 🙏
+          </p>
         </div>
 
         {/* average and 5-to-1 bars */}
@@ -197,134 +222,180 @@ export function FeedbackModal({
           </div>
         </div>
 
-        {/* comments change one by one */}
-        <div className="min-h-[92px] rounded-lg border border-line bg-panel p-3">
-          {cur ? (
-            <div key={idx} className="fade-up">
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-2xl">{EMOJI[cur.rating - 1]}</span>
-                <strong>{cur.name}</strong>
-                <span className="text-slate-400">{cur.rating}/5</span>
-                <span className="ml-auto text-xs text-slate-500">
-                  {idx + 1} of {items.length}
-                </span>
-              </div>
-              {cur.comment && (
-                <p className="mt-1 text-sm text-slate-300">“{cur.comment}”</p>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-slate-400">
-              No feedback yet. Be the first to share your thoughts!
-            </p>
-          )}
-        </div>
+        {/* GIVE FEEDBACK button, just below the rating summary */}
+        <button
+          onClick={() => setShowForm((s) => !s)}
+          aria-expanded={showForm}
+          className="w-full rounded bg-brand px-4 py-2 font-semibold text-white hover:opacity-90"
+        >
+          {showForm ? "Close" : "Give Feedback"}
+        </button>
 
-        {isLoaded && isSignedIn ? (
-          <div className="space-y-3 border-t border-line pt-4">
-            <p className="text-sm font-semibold">
-              {data?.mine ? "Update your feedback" : "How was your experience?"}
-            </p>
-            <div
-              role="radiogroup"
-              aria-label="Your rating"
-              className="grid grid-cols-5 gap-1"
-            >
-              {RATINGS.map((r) => (
-                <button
-                  key={r.v}
-                  type="button"
-                  role="radio"
-                  aria-checked={rating === r.v}
-                  onClick={() => setRating(r.v)}
-                  className={`flex flex-col items-center gap-1 rounded-lg border px-1 py-2 text-center transition ${rating === r.v ? "scale-105 border-glow bg-glow/15" : "border-line hover:bg-panel"}`}
+        {/* THE FORM CARD: opens when the button is clicked */}
+        {showForm &&
+          (isLoaded && isSignedIn ? (
+            <div className="space-y-3 rounded-xl border border-line bg-panel p-4">
+              <p className="text-sm font-semibold">
+                {data?.mine
+                  ? "Update your feedback"
+                  : "How was your experience?"}
+              </p>
+              <div
+                role="radiogroup"
+                aria-label="Your rating"
+                className="grid grid-cols-5 gap-1"
+              >
+                {RATINGS.map((r) => (
+                  <button
+                    key={r.v}
+                    type="button"
+                    role="radio"
+                    aria-checked={rating === r.v}
+                    onClick={() => setRating(r.v)}
+                    className={`flex flex-col items-center gap-1 rounded-lg border px-1 py-2 text-center transition ${rating === r.v ? "scale-105 border-glow bg-glow/15" : "border-line hover:bg-ink"}`}
+                  >
+                    <span className="text-2xl sm:text-3xl">{r.e}</span>
+                    <span className="text-[10px] leading-tight text-slate-400">
+                      {r.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div>
+                <label
+                  htmlFor="fb-name"
+                  className="mb-1 block text-sm text-slate-300"
                 >
-                  <span className="text-2xl sm:text-3xl">{r.e}</span>
-                  <span className="text-[10px] leading-tight text-slate-400">
-                    {r.label}
-                  </span>
+                  Your name
+                </label>
+                <input
+                  id="fb-name"
+                  value={name}
+                  maxLength={40}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full rounded border border-line bg-ink px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="fb-comment"
+                  className="mb-1 block text-sm text-slate-300"
+                >
+                  Do you have any thoughts you’d like to share?
+                </label>
+                <textarea
+                  id="fb-comment"
+                  rows={3}
+                  maxLength={280}
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="What do you like? What should I improve? Which topic or feature do you want next?"
+                  className="w-full rounded border border-line bg-ink px-3 py-2 text-sm"
+                />
+                <p className="text-right text-xs text-slate-500">
+                  {comment.length}/280
+                </p>
+              </div>
+              <p className="text-xs text-slate-500">
+                Your name, rating and comment are shown publicly on the site.
+              </p>
+              {error && (
+                <p role="alert" className="text-sm text-rose-400">
+                  {error}
+                </p>
+              )}
+              {status === "done" && (
+                <p role="status" className="text-sm text-emerald-400">
+                  Thank you, {name.trim()}! 🙏 Your feedback is live, and I read
+                  every one.
+                </p>
+              )}
+              <button
+                onClick={submit}
+                disabled={status === "sending"}
+                className="w-full rounded bg-brand px-4 py-2 font-semibold text-white hover:opacity-90 disabled:opacity-60"
+              >
+                {status === "sending"
+                  ? "Sending…"
+                  : data?.mine
+                    ? "Update feedback"
+                    : "Submit feedback"}
+              </button>
+            </div>
+          ) : isLoaded ? (
+            <div className="rounded-xl border border-line bg-panel p-4 text-sm">
+              <p className="mb-3">
+                Feedback is open to registered users. Sign up (it takes a few
+                seconds) to rate DSA Path.
+              </p>
+              <div className="flex gap-2">
+                <SignUpButton mode="modal">
+                  <button className="rounded bg-brand px-3 py-2 font-semibold text-white hover:opacity-90">
+                    Sign up
+                  </button>
+                </SignUpButton>
+                <SignInButton mode="modal">
+                  <button className="rounded border border-line px-3 py-2 hover:bg-ink">
+                    Sign in
+                  </button>
+                </SignInButton>
+              </div>
+            </div>
+          ) : null)}
+
+        {/* THE LIST: no animation, 5 at the top, 1 at the bottom, newest first */}
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-sm font-semibold">What people say</h3>
+            <div
+              role="group"
+              aria-label="Sort feedback"
+              className="flex gap-1 rounded bg-panel p-1 text-xs"
+            >
+              {(
+                [
+                  ["top", "Top rated"],
+                  ["new", "Newest"],
+                ] as const
+              ).map(([k, label]) => (
+                <button
+                  key={k}
+                  onClick={() => setSort(k)}
+                  className={`rounded px-2 py-1 ${sort === k ? "bg-line font-semibold" : "text-slate-400"}`}
+                >
+                  {label}
                 </button>
               ))}
             </div>
-            <div>
-              <label
-                htmlFor="fb-name"
-                className="mb-1 block text-sm text-slate-300"
-              >
-                Your name
-              </label>
-              <input
-                id="fb-name"
-                value={name}
-                maxLength={40}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full rounded border border-line bg-panel px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label
-                htmlFor="fb-comment"
-                className="mb-1 block text-sm text-slate-300"
-              >
-                Do you have any thoughts you’d like to share?
-              </label>
-              <textarea
-                id="fb-comment"
-                rows={3}
-                maxLength={280}
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                className="w-full rounded border border-line bg-panel px-3 py-2 text-sm"
-              />
-              <p className="text-right text-xs text-slate-500">
-                {comment.length}/280
-              </p>
-            </div>
-            <p className="text-xs text-slate-500">
-              Your name, rating and comment are shown publicly on the site.
-            </p>
-            {error && (
-              <p role="alert" className="text-sm text-rose-400">
-                {error}
-              </p>
-            )}
-            {status === "done" && (
-              <p role="status" className="text-sm text-emerald-400">
-                Thank you! Your feedback is now live.
-              </p>
-            )}
-            <button
-              onClick={submit}
-              disabled={status === "sending"}
-              className="w-full rounded bg-brand px-4 py-2 font-semibold text-white hover:opacity-90 disabled:opacity-60"
-            >
-              {status === "sending"
-                ? "Sending…"
-                : data?.mine
-                  ? "Update feedback"
-                  : "Submit feedback"}
-            </button>
           </div>
-        ) : isLoaded ? (
-          <div className="rounded-lg border border-line bg-panel p-4 text-sm">
-            <p className="mb-3">
-              Feedback is open to registered users. Sign up (it takes a few
-              seconds) to rate DSA Path.
-            </p>
-            <div className="flex gap-2">
-              <SignUpButton mode="modal">
-                <button className="rounded bg-brand px-3 py-2 font-semibold text-white hover:opacity-90">
-                  Sign up
-                </button>
-              </SignUpButton>
-              <SignInButton mode="modal">
-                <button className="rounded border border-line px-3 py-2 hover:bg-ink">
-                  Sign in
-                </button>
-              </SignInButton>
-            </div>
-          </div>
-        ) : null}
+          <ul className="space-y-2 sm:max-h-72 sm:overflow-y-auto sm:pr-1">
+            {sorted.length === 0 && (
+              <li className="rounded-lg border border-line bg-panel p-3 text-sm text-slate-400">
+                No feedback yet. Be the first to share your thoughts!
+              </li>
+            )}
+            {sorted.map((it, i) => (
+              <li
+                key={i}
+                className="rounded-lg border border-line bg-panel p-3"
+              >
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-2xl">{EMOJI[it.rating - 1]}</span>
+                  <strong className="min-w-0 truncate">{it.name}</strong>
+                  <span className="shrink-0 text-slate-400">{it.rating}/5</span>
+                  {it.created_at && (
+                    <span className="ml-auto shrink-0 text-xs text-slate-500">
+                      {formatDate(it.created_at)}
+                    </span>
+                  )}
+                </div>
+                {it.comment && (
+                  <p className="mt-1 text-sm text-slate-300">“{it.comment}”</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
     </div>
   );
