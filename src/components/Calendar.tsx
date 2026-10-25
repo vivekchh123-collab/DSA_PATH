@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { Problem } from "./Dashboard";
 
 const MONTHS = [
@@ -19,6 +19,64 @@ const MONTHS = [
 const pad = (n: number) => String(n).padStart(2, "0");
 const keyOf = (y: number, m: number, d: number) =>
   `${y}-${pad(m + 1)}-${pad(d)}`;
+
+type Diff = "Easy" | "Medium" | "Hard";
+const ORDER: Diff[] = ["Easy", "Medium", "Hard"];
+const TEXT: Record<Diff, string> = {
+  Easy: "text-emerald-400",
+  Medium: "text-amber-400",
+  Hard: "text-rose-400",
+};
+
+// 5 shades per level, listed from DEEPEST to LIGHTEST
+const SHADES: Record<Diff, string[]> = {
+  Easy: ["#10b981", "#34d399", "#6ee7b7", "#a7f3d0", "#d1fae5"],
+  Medium: ["#f59e0b", "#fbbf24", "#fcd34d", "#fde68a", "#fef3c7"],
+  Hard: ["#f43f5e", "#fb7185", "#fda4af", "#fecdd3", "#ffe4e6"],
+};
+const MAX_LEVELS = 5;
+// true  = 1 question is the lightest, 5 or more is the deepest (current setting)
+// false = 1 question is the deepest, 5 or more is the lightest
+const MORE_IS_DARKER = true;
+
+const shadeIndex = (n: number) => (MORE_IS_DARKER ? MAX_LEVELS - n : n - 1);
+
+// how many Easy / Medium / Hard problems are in this list of ids
+const tally = (ids: number[], byId: Map<number, Problem>) => {
+  const t: Record<Diff, number> = { Easy: 0, Medium: 0, Hard: 0 };
+  ids.forEach((id) => {
+    const p = byId.get(id);
+    if (p) t[p.difficulty]++;
+  });
+  return t;
+};
+
+// The look of one day: colour from difficulty, strength from how many were solved
+const dayLook = (
+  ids: number[] | undefined,
+  byId: Map<number, Problem>,
+): CSSProperties | undefined => {
+  if (!ids?.length) return undefined;
+  const per = tally(ids, byId);
+  const kinds = ORDER.filter((d) => per[d] > 0);
+  if (!kinds.length) return undefined;
+
+  const n = Math.min(ids.length, MAX_LEVELS);
+  const cols = kinds.map((d) => SHADES[d][shadeIndex(n)]);
+  const part = 100 / cols.length; // 2 levels = halves, 3 levels = thirds
+  const background =
+    cols.length === 1
+      ? cols[0]
+      : `linear-gradient(135deg, ${cols
+          .map((c, i) => `${c} ${i * part}% ${(i + 1) * part}%`)
+          .join(", ")})`;
+
+  return {
+    background,
+    color: "#0b1020",
+    boxShadow: `0 0 ${3 + n * 2}px ${cols[0]}99`,
+  };
+};
 
 export default function Calendar({
   solved,
@@ -74,6 +132,7 @@ export default function Calendar({
     });
 
   const ids = [...(byDate[selected] ?? [])].sort((a, b) => a - b);
+  const sel = tally(ids, byId);
   const label = new Date(selected + "T00:00:00").toLocaleDateString("en-US", {
     day: "numeric",
     month: "long",
@@ -136,14 +195,23 @@ export default function Calendar({
         {cells.map((d, i) => {
           if (!d) return <span key={i} />;
           const k = keyOf(view.y, view.m, d);
-          const c = byDate[k]?.length ?? 0;
+          const dayIds = byDate[k];
+          const c = dayIds?.length ?? 0;
+          const look = dayLook(dayIds, byId);
+          const t = c ? tally(dayIds, byId) : null;
+          const tip = t
+            ? `${c} solved: ${ORDER.filter((x) => t[x])
+                .map((x) => `${t[x]} ${x}`)
+                .join(", ")}`
+            : undefined;
           return (
             <button
               key={i}
               onClick={() => onSelect(k)}
-              title={c ? `${c} solved` : undefined}
+              style={look}
+              title={tip}
               className={`flex aspect-square flex-col items-center justify-center rounded text-xs
-                ${c >= 4 ? "bg-brand font-semibold text-white" : c ? "bg-brand/60 font-semibold text-white" : "text-slate-300 hover:bg-line"}
+                ${c ? "font-semibold" : "text-slate-300 hover:bg-line"} ${c && !look ? "bg-brand/60 text-white" : ""}
                 ${k === todayKey ? "ring-1 ring-glow" : ""} ${k === selected ? "outline outline-2 outline-white" : ""}`}
             >
               {d}
@@ -172,6 +240,15 @@ export default function Calendar({
         <p className="text-sm text-slate-400">
           {ids.length} {ids.length === 1 ? "question" : "questions"} solved
         </p>
+        {ids.length > 0 && (
+          <p className="mt-1 flex flex-wrap gap-x-3 text-xs">
+            {ORDER.filter((d) => sel[d]).map((d) => (
+              <span key={d} className={TEXT[d]}>
+                {sel[d]} {d}
+              </span>
+            ))}
+          </p>
+        )}
         <p className="mt-1 text-xs text-glow">
           {selected > todayKey
             ? "You can’t tick problems on a future date."
@@ -188,7 +265,10 @@ export default function Calendar({
                   rel="noopener noreferrer"
                   className="hover:text-glow"
                 >
-                  {p.id}. {p.title}
+                  {p.id}. {p.title}{" "}
+                  <span className={`text-xs ${TEXT[p.difficulty]}`}>
+                    {p.difficulty}
+                  </span>
                 </a>
               </li>
             ) : null;
